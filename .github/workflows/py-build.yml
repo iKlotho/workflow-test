@@ -86,6 +86,7 @@ jobs:
         run: rm -rf skald-web
 
   build:
+    needs: set-environment
     runs-on: ubuntu-latest
     env:
       ECR_REPOSITORY: ${{ inputs.ECR_REPOSITORY }}
@@ -105,7 +106,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ env.version }}
+          key: ${{ runner.os }}-buildx-${{ inputs.release_version }}
           restore-keys: |
             ${{ runner.os }}-buildx-
             
@@ -131,7 +132,11 @@ jobs:
             tags="${tags},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
           fi
           echo ::set-output name=tags::"$tags"
-
+      -
+        name: Debug filesystem
+        id: debug-fs
+        run: |
+          ls -l
       -
         name: Build and push
         id: docker-build
