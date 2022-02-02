@@ -1,0 +1,183 @@
+name: Build and Push
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+      skald_web_branch:
+        required: false
+        type: string
+      ECR_REPOSITORY:
+        required: true
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      SLACK_WEBHOOK:
+        required: true
+      GITHUB_TOKEN:
+        required: true
+      PAT:
+        required: false
+
+jobs:
+  set-environment:
+    runs-on: ubuntu-latest
+    env:
+      ECR_REPOSITORY: ${{ inputs.ECR_REPOSITORY }}
+    steps:
+      -
+        name: Set environment variables
+        run: |
+          if [[ ${{ github.event_name }} == "workflow_dispatch" ]] ;then
+            echo "version=${{ github.event.inputs.release_version }}" >> $GITHUB_ENV
+            echo "branch_or_tag_desc=branch" >> $GITHUB_ENV
+            echo "branch_or_tag_value=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+            echo "skald_web_branch=${{ github.event.inputs.skald_web_branch }}" >> $GITHUB_ENV
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "branch_or_tag_desc=tag" >> $GITHUB_ENV
+            echo "branch_or_tag_value=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "skald_web_branch=master" >> $GITHUB_ENV
+          fi
+      -
+        name: Check out code
+        uses: actions/checkout@v2
+
+  prepare-skald-web:
+    if: ${{ inputs.skald_web_branch }}
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout skald-web
+        uses: actions/checkout@v2
+        with:
+          repository: lifemote/skald-web
+          ref: ${{ env.skald_web_branch }}
+          token: ${{ secrets.PAT }} 
+          path: skald-web
+
+      -
+        name: Setup Node Project
+        uses: actions/setup-node@v1
+        with:
+          node-version: '10.19.0'
+
+      -
+        name: Install Node Libraries
+        run: npm install
+        working-directory: ./skald-web
+
+      -
+        name: Prepare servable
+        run: sh ./.github/utils/serve.sh ${{ env.version }}
+        working-directory: ./skald-web
+
+      -
+        name: Ready the static folder
+        run: |
+          rm -r static/*
+          cp -R api/static/* static/
+          cp -R skald-web/s3servable/* static/
+
+      -
+        name: Remove skald-web directory
+        run: rm -rf skald-web
+
+  pre-build:
+    runs-on: ubuntu-latest 
+    steps:
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      -
+        name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+
+      -
+        name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ env.version }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+  
+  configure-aws-credentials:
+    runs-on: ubuntu-latest 
+    steps:
+      -
+        name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+  login-and-push:
+    runs-on: ubuntu-latest
+    needs: [ pre-build, configure-aws-credentials ]
+    env:
+      ECR_REPOSITORY: ${{ inputs.ECR_REPOSITORY }}
+    steps:
+      -
+        name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      -
+        name: Handle tags
+        id: handle-tags
+        run: |
+          tags="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.version }}"
+          if [[ ${{ env.version }} == "v"* ]]; then
+            tags="${tags},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
+          fi
+          echo ::set-output name=tags::"$tags"
+
+      -
+        name: Build and push
+        id: docker-build
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.handle-tags.outputs.tags }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      -
+        name: Tag multiplatform images
+        run: |
+          export DOCKER_CLI_EXPERIMENTAL=enabled
+          for arch in arm64 amd64; do
+            DIGEST=$(docker manifest inspect ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ env.version }} | jq -r '.manifests[] | select(.platform.architecture=="'$arch'") | .digest')
+            MANIFEST=$(aws ecr batch-get-image --repository-name $ECR_REPOSITORY --image-ids imageDigest=$DIGEST --query 'images[].imageManifest' --output text)
+            aws ecr put-image --repository-name $ECR_REPOSITORY --image-tag ${{ env.version }}-$arch --image-manifest "$MANIFEST"
+          done
+      -
+        name: Notify Slack (#build-messages) with the status of build
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          fields: commit, job, took
+          channel: '#build-messages'
+          job_name: 'Build and push to Amazon ECR'
+          custom_payload: |
+             {
+                attachments: [{
+                  color: '${{ job.status }}' === 'success' ? 'good' : '${{ job.status }}' === 'failure' ? 'danger' : 'warning',
+                  text: `image: \`${{ env.ECR_REPOSITORY }}\` : \`${{ env.version }}\`\nstarted by: *${{ github.actor }}*\njob: ${process.env.AS_JOB} (${process.env.AS_TOOK})\ncommit: ${process.env.AS_COMMIT}\n${{ env.branch_or_tag_desc }}: ${{ env.branch_or_tag_value }} (skald-web: ${{ env.skald_web_branch }})`,
+                }]
+             }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ECR_REPOSITORY: ${{ inputs.ECR_REPOSITORY }}
