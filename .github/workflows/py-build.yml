@@ -126,8 +126,8 @@ jobs:
         name: Handle tags
         id: handle-tags
         run: |
-          tags="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.version }}"
-          if [[ ${{ env.version }} == "v"* ]]; then
+          tags="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.release_version }}"
+          if [[ ${{ inputs.release_version }} == "v"* ]]; then
             tags="${tags},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
           fi
           echo ::set-output name=tags::"$tags"
@@ -150,9 +150,9 @@ jobs:
         run: |
           export DOCKER_CLI_EXPERIMENTAL=enabled
           for arch in arm64 amd64; do
-            DIGEST=$(docker manifest inspect ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ env.version }} | jq -r '.manifests[] | select(.platform.architecture=="'$arch'") | .digest')
+            DIGEST=$(docker manifest inspect ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ inputs.release_version }} | jq -r '.manifests[] | select(.platform.architecture=="'$arch'") | .digest')
             MANIFEST=$(aws ecr batch-get-image --repository-name $ECR_REPOSITORY --image-ids imageDigest=$DIGEST --query 'images[].imageManifest' --output text)
-            aws ecr put-image --repository-name $ECR_REPOSITORY --image-tag ${{ env.version }}-$arch --image-manifest "$MANIFEST"
+            aws ecr put-image --repository-name $ECR_REPOSITORY --image-tag ${{ inputs.release_version }}-$arch --image-manifest "$MANIFEST"
           done
       -
         name: Notify Slack (#build-messages) with the status of build
@@ -166,7 +166,7 @@ jobs:
              {
                 attachments: [{
                   color: '${{ job.status }}' === 'success' ? 'good' : '${{ job.status }}' === 'failure' ? 'danger' : 'warning',
-                  text: `image: \`${{ env.ECR_REPOSITORY }}\` : \`${{ env.version }}\`\nstarted by: *${{ github.actor }}*\njob: ${process.env.AS_JOB} (${process.env.AS_TOOK})\ncommit: ${process.env.AS_COMMIT}\n${{ env.branch_or_tag_desc }}: ${{ env.branch_or_tag_value }} (skald-web: ${{ env.skald_web_branch }})`,
+                  text: `image: \`${{ env.ECR_REPOSITORY }}\` : \`${{ inputs.release_version }}\`\nstarted by: *${{ github.actor }}*\njob: ${process.env.AS_JOB} (${process.env.AS_TOOK})\ncommit: ${process.env.AS_COMMIT}\n${{ env.branch_or_tag_desc }}: ${{ env.branch_or_tag_value }} (skald-web: ${{ env.skald_web_branch }})`,
                 }]
              }
         env:
