@@ -22,28 +22,6 @@ on:
         required: false
 
 jobs:
-  set-environment:
-    runs-on: ubuntu-latest
-    env:
-      ECR_REPOSITORY: ${{ inputs.ECR_REPOSITORY }}
-    steps:
-      -
-        name: Set environment variables
-        run: |
-          if [[ ${{ github.event_name }} == "workflow_dispatch" ]] ;then
-            echo "version=${{ github.event.inputs.release_version }}" >> $GITHUB_ENV
-            echo "branch_or_tag_desc=branch" >> $GITHUB_ENV
-            echo "branch_or_tag_value=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
-            echo "skald_web_branch=${{ github.event.inputs.skald_web_branch }}" >> $GITHUB_ENV
-          else
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-            echo "branch_or_tag_desc=tag" >> $GITHUB_ENV
-            echo "branch_or_tag_value=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-            echo "skald_web_branch=master" >> $GITHUB_ENV
-          fi
-      -
-        name: Check out code
-        uses: actions/checkout@v2
 
   prepare-skald-web:
     if: ${{ inputs.skald_web_branch }}
@@ -86,12 +64,30 @@ jobs:
         run: rm -rf skald-web
 
   build:
-    needs: set-environment
     runs-on: ubuntu-latest
     env:
       ECR_REPOSITORY: ${{ inputs.ECR_REPOSITORY }}
       
     steps:
+      -
+        name: Set environment variables
+        run: |
+          if [[ ${{ github.event_name }} == "workflow_dispatch" ]] ;then
+            echo "version=${{ github.event.inputs.release_version }}" >> $GITHUB_ENV
+            echo "branch_or_tag_desc=branch" >> $GITHUB_ENV
+            echo "branch_or_tag_value=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+            echo "skald_web_branch=${{ github.event.inputs.skald_web_branch }}" >> $GITHUB_ENV
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "branch_or_tag_desc=tag" >> $GITHUB_ENV
+            echo "branch_or_tag_value=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "skald_web_branch=master" >> $GITHUB_ENV
+          fi
+          
+      -
+        name: Check out code
+        uses: actions/checkout@v2
+        
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v1
