@@ -20,6 +20,8 @@ on:
         required: true
       PAT:
         required: false
+      TOKEN:
+        required: true
 
 jobs:
 
@@ -174,5 +176,5 @@ jobs:
              }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
           ECR_REPOSITORY: ${{ inputs.ECR_REPOSITORY }}
