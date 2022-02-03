@@ -72,7 +72,7 @@ jobs:
       -
         name: Set environment variables
         run: |
-          if [[ ${{ github.event_name }} == "workflow_dispatch" ]] ;then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] ;then
             echo "version=${{ github.event.inputs.release_version }}" >> $GITHUB_ENV
             echo "branch_or_tag_desc=branch" >> $GITHUB_ENV
             echo "branch_or_tag_value=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
