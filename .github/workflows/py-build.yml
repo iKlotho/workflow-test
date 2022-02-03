@@ -86,7 +86,7 @@ jobs:
             fi
           fi
           
-          if [[ -n "${{ inputs.skald_web_branch }}"]] ;then
+          if [[ -n "${{ inputs.skald_web_branch }}" ]] ;then
             echo "skald_web_slack_info=(skald-web: $skald_web_branch)" >> $GITHUB_ENV
           fi
       -
