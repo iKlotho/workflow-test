@@ -86,6 +86,9 @@ jobs:
             fi
           fi
           
+          if [[${{ inputs.skald_web_branch }}]] ;then
+            echo "skald_web_slack_info=(skald-web: $skald_web_branch)" >> $GITHUB_ENV
+          fi
       -
         name: Check out code
         uses: actions/checkout@v2
@@ -130,11 +133,7 @@ jobs:
             tags="${tags},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
           fi
           echo ::set-output name=tags::"$tags"
-      -
-        name: Debug filesystem
-        id: debug-fs
-        run: |
-          ls -l
+          
       -
         name: Build and push
         id: docker-build
@@ -157,6 +156,7 @@ jobs:
             MANIFEST=$(aws ecr batch-get-image --repository-name $ECR_REPOSITORY --image-ids imageDigest=$DIGEST --query 'images[].imageManifest' --output text)
             aws ecr put-image --repository-name $ECR_REPOSITORY --image-tag ${{ inputs.release_version }}-$arch --image-manifest "$MANIFEST"
           done
+          
       -
         name: Notify Slack (#build-messages) with the status of build
         uses: 8398a7/action-slack@v3
@@ -169,7 +169,7 @@ jobs:
              {
                 attachments: [{
                   color: '${{ job.status }}' === 'success' ? 'good' : '${{ job.status }}' === 'failure' ? 'danger' : 'warning',
-                  text: `image: \`${{ env.ECR_REPOSITORY }}\` : \`${{ inputs.release_version }}\`\nstarted by: *${{ github.actor }}*\njob: ${process.env.AS_JOB} (${process.env.AS_TOOK})\ncommit: ${process.env.AS_COMMIT}\n${{ env.branch_or_tag_desc }}: ${{ env.branch_or_tag_value }} (skald-web: ${{ env.skald_web_branch }})`,
+                  text: `image: \`${{ env.ECR_REPOSITORY }}\` : \`${{ inputs.release_version }}\`\nstarted by: *${{ github.actor }}*\njob: ${process.env.AS_JOB} (${process.env.AS_TOOK})\ncommit: ${process.env.AS_COMMIT}\n${{ env.branch_or_tag_desc }}: ${{ env.branch_or_tag_value }} ${{ env.skald_web_slack_info }}`,
                 }]
              }
         env:
