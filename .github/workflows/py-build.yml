@@ -81,7 +81,7 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
             echo "branch_or_tag_desc=tag" >> $GITHUB_ENV
             echo "branch_or_tag_value=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-            if [[ ${{ env.ECR_REPOSITORY }} == "skald-backend"]] ;then
+            if [[ "${{ env.ECR_REPOSITORY }}" == "skald-backend"]] ;then
               echo "skald_web_branch=master" >> $GITHUB_ENV
             fi
           fi
